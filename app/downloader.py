@@ -130,7 +130,8 @@ class Downloader:
         await self._run_media_tool(
             "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
             "-i", os.fspath(source), "-map", "0:v:0", "-map", "0:a:0?",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-vf", "scale=720:1280:force_original_aspect_ratio=decrease:force_divisible_by=2",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "24",
             "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1",
             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
             "-y", os.fspath(compatible),

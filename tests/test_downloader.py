@@ -53,3 +53,5 @@ def test_vp9_is_transcoded_for_iphone(settings, tmp_path, monkeypatch):
     assert not source.exists()
     assert calls[1][0] == "ffmpeg"
     assert "libx264" in calls[1]
+    assert "ultrafast" in calls[1]
+    assert "scale=720:1280:force_original_aspect_ratio=decrease:force_divisible_by=2" in calls[1]
