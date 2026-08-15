@@ -4,7 +4,7 @@ A small FastAPI backend that downloads public Instagram Reels for iOS Shortcuts 
 
 ## Deploy
 
-Prerequisites: Docker Engine, Docker Compose, an `A`/`AAAA` DNS record for `reels.rarmash.ru`, and the existing Caddy installation on the VPS.
+Prerequisites: Docker Engine, Docker Compose, an `A`/`AAAA` DNS record for `reels.rarmash.ru`, and the existing Nginx installation on the VPS.
 
 ```bash
 git clone YOUR_REPOSITORY_URL reel-relay
@@ -17,37 +17,44 @@ docker compose ps
 curl http://127.0.0.1:8765/health
 ```
 
-Append the site block from `Caddyfile.example` to the existing `/etc/caddy/Caddyfile`; do not replace the block for the other domain. Caddy can serve both domains on the same ports 80 and 443 using the request hostname and TLS SNI. The application port 8765 remains bound exclusively to `127.0.0.1` and must not be exposed through UFW.
+Create a separate Nginx virtual host using `nginx.conf.example`; do not change the server block for the other domain. Nginx can serve both domains on the same ports 80 and 443 using the request hostname and TLS SNI. The application port 8765 remains bound exclusively to `127.0.0.1` and must not be exposed through UFW.
 
-Allow SSH and the two shared public Caddy ports. These UFW rules are idempotent, so they are safe if 80/443 are already allowed:
+Allow SSH and the two shared public Nginx ports. These UFW rules are idempotent, so they are safe if 80/443 are already allowed:
 
 ```bash
 sudo ufw allow OpenSSH
-sudo ufw allow 80/tcp comment 'Caddy HTTP'
-sudo ufw allow 443/tcp comment 'Caddy HTTPS'
+sudo ufw allow 80/tcp comment 'Nginx HTTP'
+sudo ufw allow 443/tcp comment 'Nginx HTTPS'
 sudo ufw status verbose
 # Run this only if UFW is currently inactive, after confirming the SSH rule:
 sudo ufw enable
 ```
 
-After adding the new Caddy site block, validate and reload the existing configuration:
+Install Certbot's Nginx integration if necessary, copy the example as a new site, and enable it:
 
 ```bash
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+sudo apt update
+sudo apt install -y certbot python3-certbot-nginx
+sudo cp nginx.conf.example /etc/nginx/sites-available/reels.rarmash.ru
+sudo ln -s /etc/nginx/sites-available/reels.rarmash.ru /etc/nginx/sites-enabled/reels.rarmash.ru
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d reels.rarmash.ru
+sudo nginx -t
+sudo systemctl reload nginx
 curl https://reels.rarmash.ru/health
 ```
 
-Create the two user tokens. Each plaintext token is returned once; save each one immediately in the corresponding Shortcut:
+Create user tokens as needed. Each plaintext token is returned once; save it immediately in the corresponding Shortcut:
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/v1/admin/tokens \
   -H "Authorization: Bearer ADMIN_TOKEN" -H "Content-Type: application/json" \
-  -d '{"name":"Rarmash"}'
+  -d '{"name":"user-one"}'
 
 curl -X POST http://127.0.0.1:8765/api/v1/admin/tokens \
   -H "Authorization: Bearer ADMIN_TOKEN" -H "Content-Type: application/json" \
-  -d '{"name":"LDA"}'
+  -d '{"name":"user-two"}'
 ```
 
 Download a public Reel:
