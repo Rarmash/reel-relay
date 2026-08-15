@@ -1,0 +1,33 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
+      DATABASE_PATH: /data/reel-relay.db
+      TEMP_ROOT: /run/reel-downloader
+      MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-5}
+      DOWNLOAD_TIMEOUT_SECONDS: ${DOWNLOAD_TIMEOUT_SECONDS:-120}
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-500}
+      COOKIES_FILE: ${COOKIES_FILE:-}
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8765}:8000"
+    volumes:
+      - reel_data:/data
+      # Future cookies support (also set COOKIES_FILE=/run/secrets/instagram-cookies.txt):
+      # - ./secrets/instagram-cookies.txt:/run/secrets/instagram-cookies.txt:ro
+    tmpfs:
+      - /run/reel-downloader:rw,noexec,nosuid,nodev,size=${TMPFS_SIZE:-1g},uid=10001,gid=10001,mode=0700
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  reel_data:
