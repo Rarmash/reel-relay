@@ -55,19 +55,21 @@ class Downloader:
             args += ["--cookies", os.fspath(self.settings.cookies_file)]
         args.append(url)
         process = None
+        acquired = False
         try:
-            async with self.semaphore:
-                process = await asyncio.create_subprocess_exec(
-                    *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            await self.semaphore.acquire()
+            acquired = True
+            process = await asyncio.create_subprocess_exec(
+                *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            try:
+                stdout, _ = await asyncio.wait_for(
+                    process.communicate(), self.settings.download_timeout_seconds
                 )
-                try:
-                    stdout, _ = await asyncio.wait_for(
-                        process.communicate(), self.settings.download_timeout_seconds
-                    )
-                except asyncio.TimeoutError as exc:
-                    process.kill()
-                    await process.wait()
-                    raise DownloadTimeout from exc
+            except asyncio.TimeoutError as exc:
+                process.kill()
+                await process.wait()
+                raise DownloadTimeout from exc
             if process.returncode != 0:
                 raise DownloadError(f"yt-dlp exited with code {process.returncode}")
             lines = [line.strip() for line in stdout.decode("utf-8", "replace").splitlines() if line.strip()]
@@ -87,6 +89,9 @@ class Downloader:
                 with contextlib.suppress(Exception): await process.wait()
             shutil.rmtree(request_dir, ignore_errors=True)
             raise
+        finally:
+            if acquired:
+                self.semaphore.release()
 
     async def _run_media_tool(self, *args: str) -> bytes:
         process = await asyncio.create_subprocess_exec(

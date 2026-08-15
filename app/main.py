@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse
 from app.config import Settings, load_settings
 from app.database import Database
 from app.downloader import Downloader
-from app.routes import admin, download
+from app.jobs import JobManager
+from app.routes import admin, download, jobs
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -18,12 +19,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         cfg.temp_root.mkdir(parents=True, exist_ok=True)
         await app.state.db.initialize()
-        yield
+        await app.state.jobs.start()
+        try:
+            yield
+        finally:
+            await app.state.jobs.stop()
 
     app = FastAPI(title="Reel Relay", version="1.0.0", lifespan=lifespan)
     app.state.settings = cfg
     app.state.db = Database(cfg.database_path)
     app.state.downloader = Downloader(cfg)
+    app.state.jobs = JobManager(app)
 
     @app.middleware("http")
     async def request_id(request: Request, call_next):
@@ -48,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def health(): return {"status": "ok"}
 
     app.include_router(download.router)
+    app.include_router(jobs.router)
     app.include_router(admin.router)
     return app
 

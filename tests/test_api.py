@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
+import time
 
 from app.auth import hash_token
 from app.downloader import DownloadError
@@ -57,6 +58,72 @@ def test_downloader_failure_is_normalized(client, admin_headers, user, app, sett
     assert response.status_code == 502
     assert response.json()["error"] == "download_failed"
     assert "private" not in response.text
+
+
+def wait_for_job(client, headers, job_id):
+    for _ in range(100):
+        response = client.get(f"/api/v1/jobs/{job_id}", headers=headers)
+        assert response.status_code == 200
+        if response.json()["status"] in {"ready", "failed"}:
+            return response
+        time.sleep(0.01)
+    raise AssertionError("job did not finish")
+
+
+def test_job_download_stats_cleanup_and_single_use(client, admin_headers, user, app, settings):
+    _, headers = user
+    app.state.downloader = FakeDownloader(settings.temp_root)
+    created = client.post(
+        "/api/v1/jobs", headers=headers, json={"url": "https://instagram.com/reel/x/"}
+    )
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    status = wait_for_job(client, headers, job_id)
+    assert status.json() == {"id": job_id, "status": "ready", "size": 8}
+
+    downloaded = client.get(f"/api/v1/jobs/{job_id}/download", headers=headers)
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"mock-mp4"
+    assert not (settings.temp_root / "request-id").exists()
+    assert client.get(f"/api/v1/jobs/{job_id}", headers=headers).status_code == 404
+
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    stats = client.get(f"/api/v1/admin/stats?month={month}", headers=admin_headers).json()
+    assert stats["total"]["downloads"] == 1
+    assert stats["total"]["bytes_sent"] == 8
+
+
+def test_job_is_private_to_its_token(client, admin_headers, user, app, settings):
+    _, owner_headers = user
+    other = client.post(
+        "/api/v1/admin/tokens", headers=admin_headers, json={"name": "second-user"}
+    ).json()
+    other_headers = {"Authorization": f"Bearer {other['token']}"}
+    app.state.downloader = FakeDownloader(settings.temp_root)
+    created = client.post(
+        "/api/v1/jobs", headers=owner_headers, json={"url": "https://instagram.com/reel/x/"}
+    )
+    job_id = created.json()["id"]
+    assert client.get(f"/api/v1/jobs/{job_id}", headers=other_headers).status_code == 404
+
+
+def test_job_failure_is_normalized(client, admin_headers, user, app, settings):
+    _, headers = user
+    app.state.downloader = FakeDownloader(settings.temp_root, fail=True)
+    created = client.post(
+        "/api/v1/jobs", headers=headers, json={"url": "https://instagram.com/reel/x/"}
+    )
+    job_id = created.json()["id"]
+    status = wait_for_job(client, headers, job_id)
+    assert status.json()["error"] == "download_failed"
+    assert "private" not in status.text
+    download = client.get(f"/api/v1/jobs/{job_id}/download", headers=headers)
+    assert download.status_code == 409
+    assert download.json()["status"] == "failed"
+
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    stats = client.get(f"/api/v1/admin/stats?month={month}", headers=admin_headers).json()
+    assert stats["total"]["failed"] == 1
 
 
 def test_atomic_concurrent_event_updates(app):

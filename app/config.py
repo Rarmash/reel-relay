@@ -22,6 +22,7 @@ class Settings:
     download_timeout_seconds: int
     max_file_size_mb: int
     cookies_file: Path | None
+    job_ttl_seconds: int = 600
 
     @property
     def max_file_size_bytes(self) -> int:
@@ -38,4 +39,5 @@ def load_settings() -> Settings:
         download_timeout_seconds=max(1, int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "120"))),
         max_file_size_mb=max(1, int(os.getenv("MAX_FILE_SIZE_MB", "500"))),
         cookies_file=Path(cookies) if cookies else None,
+        job_ttl_seconds=max(60, int(os.getenv("JOB_TTL_SECONDS", "600"))),
     )

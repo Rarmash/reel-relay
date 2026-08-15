@@ -57,13 +57,17 @@ curl -X POST http://127.0.0.1:8765/api/v1/admin/tokens \
   -d '{"name":"user-two"}'
 ```
 
-Download a public Reel:
+Start an asynchronous download, poll its status, then retrieve the ready file:
 
 ```bash
-curl -X POST http://127.0.0.1:8765/api/v1/download \
+JOB_ID=$(curl -sS -X POST http://127.0.0.1:8765/api/v1/jobs \
   -H "Authorization: Bearer USER_TOKEN" -H "Content-Type: application/json" \
-  -d '{"url":"https://www.instagram.com/reel/XXXXXXXX/"}' -o reel.mp4
+  -d '{"url":"https://www.instagram.com/reel/XXXXXXXX/"}' | jq -r .id)
+curl -H "Authorization: Bearer USER_TOKEN" "http://127.0.0.1:8765/api/v1/jobs/$JOB_ID"
+curl -H "Authorization: Bearer USER_TOKEN" "http://127.0.0.1:8765/api/v1/jobs/$JOB_ID/download" -o reel.mp4
 ```
+
+The original synchronous `POST /api/v1/download` endpoint remains available for compatibility with existing clients.
 
 List tokens, inspect this month's traffic, and revoke a token:
 
@@ -78,7 +82,7 @@ See `docs/shortcut.md` for iOS configuration.
 
 ## Configuration and maintenance
 
-`.env.example` documents all limits. The sixth download waits asynchronously for a semaphore slot. The timeout covers `yt-dlp`; the tmpfs size is an independent hard ceiling. SQLite uses WAL and short atomic insert transactions.
+`.env.example` documents all limits. The download semaphore covers the complete download, probe, and optional transcode pipeline. Ready asynchronous jobs expire after `JOB_TTL_SECONDS`; their files are deleted immediately after delivery or expiry. The tmpfs size is an independent hard ceiling. SQLite uses WAL and short atomic insert transactions.
 
 Update `yt-dlp` by changing its pinned version in `requirements.txt`, then rebuild:
 
